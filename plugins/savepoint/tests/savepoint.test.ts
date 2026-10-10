@@ -106,6 +106,14 @@ test('writing the checkpoint itself does not count as unsaved work', async ($, o
   expect(await reset($, w)).toContain('BONFIRE LIT')
 })
 
+test('a shell save spelled ~/ or $HOME/ also does not count as unsaved work', async ($, on) => {
+  const w = world($, on)
+  await $.tool.call({ tool: 'Bash', command: "cat >> ~/.claude/progress/-home-u-proj.md <<'EOF'\nstep done\nEOF" } as never)
+  await $.tool.call({ tool: 'Bash', command: 'echo ok >> "$HOME/.claude/progress/-home-u-proj.md"' } as never)
+  await finishStep($)
+  expect(await reset($, w)).toContain('BONFIRE LIT')
+})
+
 test('mid-step (no step-done line): refused; force waives only that check', async ($, on) => {
   const w = world($, on)
   await finishStep($, 'Still debugging the mask, next I try v4.')

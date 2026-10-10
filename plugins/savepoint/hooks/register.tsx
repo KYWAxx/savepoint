@@ -127,8 +127,14 @@ async function archive($: $, o: Opts, messages: readonly SessionMessage[]) {
   return path
 }
 
-const isProgressWrite = (input: Record<string, unknown>, path: string) =>
-  input.file_path === path || (typeof input.command === 'string' && input.command.includes(path))
+// A shell save may spell the path as ~/…, $HOME/… or ${HOME}/…, so match every form.
+function isProgressWrite(input: Record<string, unknown>, path: string, home: string) {
+  if (input.file_path === path) return true
+  if (typeof input.command !== 'string') return false
+  const rest = home && path.startsWith(`${home}/`) ? path.slice(home.length) : undefined
+  const forms = rest === undefined ? [path] : [path, `~${rest}`, `$HOME${rest}`, `\${HOME}${rest}`]
+  return forms.some(f => (input.command as string).includes(f))
+}
 
 async function refresh($: $, o: Opts) {
   const k = await contextK($, o)
@@ -219,7 +225,7 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     if (!WORK_TOOLS.has(String(e.tool))) return next(e)
     const path = await progressPath($, o)
-    const counts = !isProgressWrite(e as unknown as Record<string, unknown>, path)
+    const counts = !isProgressWrite(e as unknown as Record<string, unknown>, path, (await $.env.get('HOME')) ?? '')
     await update($, work, w => ({ ...w, inFlight: w.inFlight + 1 }))
     try {
       return await next(e)
