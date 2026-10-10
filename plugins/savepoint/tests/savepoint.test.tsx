@@ -47,6 +47,8 @@ function world($: Engine, on: On, opts: { saveAgeMin?: number; hasSave?: boolean
     if (r.messages) after.push(...r.messages.map(m => m.text))
     return { text: 'compacted' }
   })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('ui.render', ($, e) => { const { Box } = $.ui.resolve(e); return <Box key="engine" /> })
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   return { clock, files, compacted, toasts, after }
@@ -133,4 +135,22 @@ test('a normal /compact or auto-compact passes straight through', async ($, on) 
   const r = await $.session.compact({ instructions: 'keep the plan', messages: [] } as never)
   expect(r.messages?.[0]?.text).toBe('SUMMARY')
   expect(w.compacted.core).toBe(1)
+})
+
+test('the band never shows over a running turn, even when the engine says idle', async ($, on) => {
+  world($, on)
+  await finishStep($)
+  const turn = ($ as unknown as { turn: { start: (input: unknown) => Promise<unknown> } }).turn
+  const BAND = { component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20 } } as never
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const idle = await $.ui.mount({ plugin: 'savepoint', surface, ...(BAND as object) } as never)
+    expect(await idle.find({ type: 'Text', text: /SAVEPOINT/ })).toBeDefined()
+    await idle.unmount()
+  }
+  await turn.start({ text: 'go', turnId: 't2' } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const busy = await $.ui.mount({ plugin: 'savepoint', surface, ...(BAND as object) } as never)
+    expect(await busy.find({ type: 'Text', text: /SAVEPOINT/ })).toBeUndefined()
+    await busy.unmount()
+  }
 })

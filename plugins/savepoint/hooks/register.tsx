@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionMessage } from 'claude-code'
 
-import type { SavepointWork } from '../types'
+import type { SavepointTurn, SavepointWork } from '../types'
 
 // SAVEPOINT: checkpoint each finished step, then reset the context to that save.
 // A reset is a compaction this mod answers itself (no summary model call): the
@@ -21,6 +21,9 @@ const isHidden = atom({ plugin: 'savepoint', key: 'isHidden' } as const, false)
 const isResetting = atom({ plugin: 'savepoint', key: 'isResetting' } as const, false)
 const archivePath = atom({ plugin: 'savepoint', key: 'archivePath' } as const, '')
 const litAt = atom({ plugin: 'savepoint', key: 'litAt' } as const, 0)
+// Turns in flight, by id. The band also checks the engine's isWorking, but that prop can
+// lag an async draw; reading this atom while drawing redraws the band the moment a turn starts.
+const turns = atom({ plugin: 'savepoint', key: 'turns' } as const, [] as SavepointTurn[])
 
 // The bonfire. Every row is 11 columns, centered on column 5 over the logs.
 type Blaze = 'embers' | 'steady' | 'tall' | 'roaring'
@@ -57,6 +60,8 @@ const CLEARED_KEY = 'cleared-at'
 const RESET_TOKEN = 'savepoint reset'
 const ARM_MS = 60_000
 const SUBMIT_DELAY_MS = 50
+// A turn whose turn.complete never arrived stops hiding the band after this long.
+const STALE_TURN_MS = 30 * 60_000
 
 type $ = EngineInterface
 type Verdict = { ok: true; ageMin: number } | { ok: false; why: string; fix: string; canSave: boolean }
@@ -255,7 +260,14 @@ export const register: Register = (on, options) => {
     return next({ ...e, context })
   })
 
+  on('turn.start', async ($, e, next) => {
+    const now = await $.clock.now()
+    await update($, turns, t => [...t.filter(x => now - x.at < STALE_TURN_MS), { id: e.turnId, at: now }])
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
+    await update($, turns, t => t.filter(x => x.id !== e.turnId))
     if (e.agentId === undefined) {
       await update($, stepDone, () => DONE_MARK.test(e.answer.slice(-400)))
       void refresh($, o)
@@ -275,8 +287,12 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || e.props.isWorking) return next(e)
-    const k = await contextK($, o)
+    // Never over a live reply or a running tool: read our own state first, before any other await.
+    const active = await read($, turns)
+    const { inFlight } = await read($, work)
     const now = await $.clock.now()
+    if (inFlight > 0 || active.some(x => now - x.at < STALE_TURN_MS)) return next(e)
+    const k = await contextK($, o)
     const lit = (await read($, litAt)) > 0 && now - (await read($, litAt)) < LIT_MS
     const { Box, Button, Text } = $.ui.resolve(e)
     // Each draw mirrors the flames, so the fire flickers without leaving center.

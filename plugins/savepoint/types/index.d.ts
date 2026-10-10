@@ -1,3 +1,4 @@
+export type SavepointTurn = { id: string; at: number }
 export type SavepointWork = { inFlight: number; lastWorkAt: number }
 
 declare module 'claude-code' {
@@ -9,6 +10,7 @@ declare module 'claude-code' {
       isResetting: boolean
       archivePath: string
       litAt: number
+      turns: SavepointTurn[]
     }
   }
 }
