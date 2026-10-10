@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "savepoint",
+  "description": "Rest at the bonfire: reset a long Claude Code session to a checkpoint, only at clean step boundaries.",
+  "owner": {
+    "name": "KYWAxx",
+    "url": "https://github.com/KYWAxx"
+  },
+  "plugins": [
+    {
+      "name": "savepoint",
+      "description": "Context hygiene with safeguards: checkpoint each finished step, then reset the context to that save, never mid-project.",
+      "version": "0.1.0",
+      "author": {
+        "name": "KYWAxx"
+      },
+      "source": "./plugins/savepoint",
+      "category": "productivity",
+      "homepage": "https://github.com/KYWAxx/savepoint"
+    }
+  ]
+}

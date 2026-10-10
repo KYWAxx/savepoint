@@ -1,0 +1,76 @@
+{
+  "name": "savepoint",
+  "version": "0.1.0",
+  "description": "Context hygiene with safeguards: checkpoint each finished step, then reset the context to that save, never mid-project.",
+  "author": {
+    "name": "KYWAxx",
+    "url": "https://github.com/KYWAxx"
+  },
+  "homepage": "https://github.com/KYWAxx/savepoint",
+  "repository": "https://github.com/KYWAxx/savepoint",
+  "license": "MIT",
+  "keywords": [
+    "context",
+    "compact",
+    "checkpoint",
+    "resume",
+    "tokens"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "progressDir": {
+      "type": "string",
+      "title": "Progress dir",
+      "description": "Where per-directory resume files live (~ allowed)",
+      "default": "~/.claude/progress"
+    },
+    "switchK": {
+      "type": "number",
+      "title": "Guard from (k tokens)",
+      "description": "Context size where the step-done guard starts",
+      "default": 60
+    },
+    "wrapK": {
+      "type": "number",
+      "title": "Wrap-up at (k tokens)",
+      "description": "Context size where Claude steers toward finishing the step",
+      "default": 110
+    },
+    "hardK": {
+      "type": "number",
+      "title": "Over budget at (k tokens)",
+      "description": "Context size where Claude checkpoints every turn",
+      "default": 150
+    },
+    "freshMin": {
+      "type": "number",
+      "title": "Save counts as fresh (min)",
+      "description": "A reset needs a save at most this old",
+      "default": 15
+    },
+    "restoreChars": {
+      "type": "number",
+      "title": "Restore size (chars)",
+      "description": "How much of the progress file's tail a reset or /clear reloads",
+      "default": 6000
+    },
+    "guard": {
+      "type": "boolean",
+      "title": "Inject guard notes",
+      "description": "Tell Claude the context tier on each prompt",
+      "default": true
+    },
+    "restoreOnClear": {
+      "type": "boolean",
+      "title": "Restore after /clear",
+      "description": "Reload the progress file into the first prompt after /clear",
+      "default": true
+    },
+    "userName": {
+      "type": "string",
+      "title": "Your name",
+      "description": "How guard notes refer to you",
+      "default": "the user"
+    }
+  }
+}
