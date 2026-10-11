@@ -123,6 +123,22 @@ test('mid-step (no step-done line): refused; force waives only that check', asyn
   expect(await reset($, w, 'reset force')).toContain('BONFIRE LIT')
 })
 
+test('a mark reply, then a plain reply with no mark and no work: reset is still allowed', async ($, on) => {
+  const w = world($, on)
+  await finishStep($)
+  await finishStep($, 'Sure: the mask uses a 3px feather.')
+  expect(await reset($, w)).toContain('BONFIRE LIT')
+})
+
+test('a mark reply, then a work tool call: reset is refused', async ($, on) => {
+  const w = world($, on)
+  await finishStep($)
+  await $.tool.call({ tool: 'Bash', command: 'make render' } as never)
+  await finishStep($, 'Ran the render.')
+  expect(await reset($, w)).not.toContain('BONFIRE LIT')
+  expect(w.compacted.core).toBe(0)
+})
+
 test('a typed /compact savepoint reset without arming is refused, not summarized', async ($, on) => {
   const w = world($, on)
   const r = await $.session.compact({ instructions: 'savepoint reset', messages: [] } as never)

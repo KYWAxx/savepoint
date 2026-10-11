@@ -240,6 +240,7 @@ export const register: Register = (on, options) => {
         inFlight: Math.max(0, w.inFlight - 1),
         lastWorkAt: counts ? now : w.lastWorkAt,
       }))
+      if (counts) await update($, stepDone, () => false)
     }
   })
 
@@ -269,7 +270,8 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     await update($, turns, t => t.filter(x => x.id !== e.turnId))
     if (e.agentId === undefined) {
-      await update($, stepDone, () => DONE_MARK.test(e.answer.slice(-400)))
+      // The mark persists until work happens: an unmarked reply (plain Q&A) must not clear it.
+      if (DONE_MARK.test(e.answer.slice(-400))) await update($, stepDone, () => true)
       void refresh($, o)
     }
     return next(e)
@@ -357,7 +359,7 @@ function guardNote(k: number, prog: string, o: { wrapK: number; hardK: number; w
     `A step counts as DONE when its result just landed and checked out (rendered and looked at, tests/QC passed, ` +
     `shipped, or ${o.who} approved it) and nothing is half-finished or mid-debug. Step boundaries, not project ` +
     `switches, are the reset points.`
-  const say = `"✓ step done · saved · good time to reset (ctx ${k}k)"`
+  const say = `"✓ step done · saved · good time to reset (ctx ${k}k) · type /savepoint reset"`
   if (k >= o.hardK) {
     return `[savepoint ${k}k OVER BUDGET] Before anything else, update ${prog} (task, key paths, what changed, exact next ` +
       `step). Do only small, finishing work this turn. If the step is done, end with one line: ${say}; otherwise end with ` +

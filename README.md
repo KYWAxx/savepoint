@@ -59,10 +59,18 @@ When Claude finishes a step (the result landed and checked out, nothing half-don
 saved, it ends its reply with:
 
 ```
-✓ step done · saved · good time to reset (ctx 84k)
+✓ step done · saved · good time to reset (ctx 84k) · type /savepoint reset
 ```
 
-That line is what unlocks the **Rest** button.
+That line is what unlocks the **Rest** button. The mark stays valid until work happens
+(an Edit, Write, NotebookEdit, Bash or Agent call finishes), so a plain follow-up question
+does not clear it. The older form without the trailing hint is still recognized.
+
+### On claude.ai/code (Remote Control)
+
+The band and status line do not draw there, so there is no Rest button. Guard notes,
+`/savepoint` and `/savepoint reset` work when typed: after the step line, type
+`/savepoint reset`.
 
 ### Safeguards
 
