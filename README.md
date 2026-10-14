@@ -53,6 +53,9 @@ Every save is also copied to `~/.claude/progress/-home-me-proj.md`, the newest s
 session in that directory, so a fresh session can read where the directory left off. A reset
 only ever trusts the session's own file.
 
+A save is capped at `maxSaveChars` (8000). When it grows past that, older `## ` sections move to
+`~/.claude/progress/-home-me-proj.history.md` and the newest ones stay.
+
 Once the context passes 60k tokens, savepoint adds a short note to each of your prompts telling
 Claude how big the context is and when to update this file. Below that, it stays out of the way.
 You can always ask Claude to checkpoint yourself ("checkpoint the progress file").
@@ -111,6 +114,7 @@ Set these via `/plugin` (configure savepoint).
 | `freshMin` | 15 | How old a save can be (minutes) and still allow a reset |
 | `restoreChars` | 6000 | How much of the progress file's tail a reset or `/clear` reloads |
 | `guard` | true | Add guard notes to prompts |
+| `maxSaveChars` | 8000 | Save size cap: past this, older `## ` sections move to `<slug>.history.md` |
 | `restoreOnClear` | true | Reload the progress file after `/clear` |
 | `userName` | `the user` | How guard notes refer to you |
 

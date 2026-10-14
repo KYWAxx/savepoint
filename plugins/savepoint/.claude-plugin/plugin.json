@@ -54,6 +54,12 @@
       "description": "How much of the progress file's tail a reset or /clear reloads",
       "default": 6000
     },
+    "maxSaveChars": {
+      "type": "number",
+      "title": "Save size cap (chars)",
+      "description": "When a save grows past this, older entries move to <slug>.history.md",
+      "default": 8000
+    },
     "guard": {
       "type": "boolean",
       "title": "Inject guard notes",

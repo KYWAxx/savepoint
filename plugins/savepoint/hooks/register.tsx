@@ -65,7 +65,7 @@ const STALE_TURN_MS = 30 * 60_000
 type $ = EngineInterface
 type Verdict = { ok: true; ageMin: number } | { ok: false; why: string; fix: string; canSave: boolean }
 
-type Opts = { progressDir: string; switchK: number; wrapK: number; hardK: number; freshMin: number; restoreChars: number; guard: boolean; restoreOnClear: boolean; who: string }
+type Opts = { progressDir: string; switchK: number; wrapK: number; hardK: number; freshMin: number; restoreChars: number; maxSaveChars: number; guard: boolean; restoreOnClear: boolean; who: string }
 
 // One save file per session, `<dir-slug>.<session>.md`, so two chats in one directory never
 // overwrite (or reset to) each other's save. `<dir-slug>.md` is a copy of the newest save from
@@ -178,6 +178,33 @@ async function reset($: $, o: Opts, force: boolean) {
   return 'Resetting to savepoint…'
 }
 
+// Keep a save under the cap: the preamble plus the newest `## ` sections that fit (always at least
+// the last one); older sections are appended to `<slug>.history.md`.
+async function capSave($: $, o: Opts, path: string) {
+  try {
+    const txt = await $.fs.read(path)
+    if (typeof txt !== 'string' || txt.length <= o.maxSaveChars) return
+    const parts = txt.split(/^(?=## )/m)
+    const pre = parts[0].startsWith('## ') ? '' : (parts.shift() as string)
+    if (parts.length < 2) return
+    let size = pre.length
+    let first = parts.length
+    while (first > 0 && (first === parts.length || size + parts[first - 1].length <= o.maxSaveChars)) {
+      first--
+      size += parts[first].length
+    }
+    if (first === 0) return
+    const history = `${await dirBase($, o)}.history.md`
+    const old = await $.fs.read(history).catch(() => '')
+    const note = `<!-- moved from ${path} at ${new Date(await $.clock.now()).toISOString()} -->\n`
+    const dropped = parts.slice(0, first).join('')
+    await $.fs.write(history, `${typeof old === 'string' ? old : ''}${note}${dropped.endsWith('\n') ? dropped : dropped + '\n'}`)
+    await $.fs.write(path, pre + parts.slice(first).join(''))
+  } catch {
+    // Trimming is housekeeping: a failure leaves the save as it was.
+  }
+}
+
 async function mirrorLatest($: $, path: string, latest: string) {
   try {
     const txt = await $.fs.read(path)
@@ -201,6 +228,7 @@ export const register: Register = (on, options) => {
     hardK: Number(options.hardK ?? 150),
     freshMin: Number(options.freshMin ?? 15),
     restoreChars: Number(options.restoreChars ?? 6000),
+    maxSaveChars: Number(options.maxSaveChars ?? 8000),
     guard: options.guard !== false,
     restoreOnClear: options.restoreOnClear !== false,
     who: String(options.userName ?? 'the user'),
@@ -273,6 +301,7 @@ export const register: Register = (on, options) => {
         lastWorkAt: counts ? now : w.lastWorkAt,
       }))
       if (counts) await update($, stepDone, () => false)
+      if (isSave) await capSave($, o, path)
       if (isSave) await mirrorLatest($, path, latest)
     }
   })

@@ -195,3 +195,33 @@ test('writing the shared latest file does not count as unsaved work', async ($, 
   await $.tool.call({ tool: 'Write', file_path: LATEST, content: SAVE } as never)
   expect(await reset($, w)).toContain('BONFIRE LIT')
 })
+
+const HISTORY = '/home/u/.claude/progress/-home-u-proj.history.md'
+
+test('an over-cap save is trimmed, old sections go to history, the mirror gets the trimmed copy', async ($, on) => {
+  const w = world($, on, { hasSave: false })
+  const big = '# task\n' + ['## one', '## two', '## three'].map(h => `${h}\n${h[3]}`.padEnd(3500, '.') + '\n').join('')
+  w.files.set(PROG, { text: big, mtimeMs: NOW })
+  await $.tool.call({ tool: 'Write', file_path: PROG, content: big } as never)
+  const kept = w.files.get(PROG)!.text
+  expect(kept.startsWith('# task\n')).toBe(true)
+  expect(kept).toContain('## three')
+  expect(kept).toContain('## two')
+  expect(kept).not.toContain('## one')
+  expect(kept.length).toBeLessThanOrEqual(8000)
+  const hist = w.files.get(HISTORY)!.text
+  expect(hist).toContain('<!-- moved from ' + PROG)
+  expect(hist).toContain('## one')
+  expect(hist).not.toContain('## two')
+  expect(w.files.get(LATEST)?.text).toBe(kept)
+})
+
+test('an under-cap save is left alone and no history file is written', async ($, on) => {
+  const w = world($, on, { hasSave: false })
+  const small = SAVE + '\n## a\nx\n## b\ny\n'
+  w.files.set(PROG, { text: small, mtimeMs: NOW })
+  await $.tool.call({ tool: 'Write', file_path: PROG, content: small } as never)
+  expect(w.files.get(PROG)?.text).toBe(small)
+  expect(w.files.has(HISTORY)).toBe(false)
+  expect(w.files.get(LATEST)?.text).toBe(small)
+})
