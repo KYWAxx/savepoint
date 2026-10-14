@@ -56,7 +56,6 @@ const fireText = (b: Blaze) => FIRE[b].join('\n')
 const DONE_MARK = /✓ step done/
 const WORK_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'Bash', 'Agent'])
 const MIN_SAVE_BYTES = 200
-const CLEARED_KEY = 'cleared-at'
 const RESET_TOKEN = 'savepoint reset'
 const ARM_MS = 60_000
 const SUBMIT_DELAY_MS = 50
@@ -68,10 +67,22 @@ type Verdict = { ok: true; ageMin: number } | { ok: false; why: string; fix: str
 
 type Opts = { progressDir: string; switchK: number; wrapK: number; hardK: number; freshMin: number; restoreChars: number; guard: boolean; restoreOnClear: boolean; who: string }
 
-async function progressPath($: $, o: Opts) {
+// One save file per session, `<dir-slug>.<session>.md`, so two chats in one directory never
+// overwrite (or reset to) each other's save. `<dir-slug>.md` is a copy of the newest save from
+// any session there: what a fresh session reads on boot, never what a reset trusts.
+async function dirBase($: $, o: Opts) {
   const home = (await $.env.get('HOME')) ?? ''
   const dir = o.progressDir.replace(/^~(?=\/|$)/, home).replace(/\/+$/, '')
-  return `${dir}/${(await $.session.cwd()).replace(/[^A-Za-z0-9]+/g, '-')}.md`
+  return `${dir}/${(await $.session.cwd()).replace(/[^A-Za-z0-9]+/g, '-')}`
+}
+
+async function progressPath($: $, o: Opts, sessionId?: string) {
+  const id = sessionId ?? (await $.session.id())
+  return `${await dirBase($, o)}.${id.replace(/[^A-Za-z0-9]/g, '').slice(0, 8)}.md`
+}
+
+async function latestPath($: $, o: Opts) {
+  return `${await dirBase($, o)}.md`
 }
 
 async function contextK($: $, o: Opts) {
@@ -110,16 +121,21 @@ async function canReset($: $, o: Opts, force: boolean): Promise<Verdict> {
   return { ok: true, ageMin }
 }
 
-async function restoreText($: $, o: Opts, header: string) {
-  const path = await progressPath($, o)
-  let txt = await $.fs.read(path)
+async function restoreText($: $, o: Opts, header: string, sessionId?: string) {
+  const path = await progressPath($, o, sessionId)
+  let txt: unknown
+  try {
+    txt = await $.fs.read(path)
+  } catch {
+    return undefined
+  }
   if (typeof txt !== 'string') return undefined
   if (txt.length > o.restoreChars) txt = '…(older entries trimmed)…\n' + txt.slice(-o.restoreChars)
   return `${header} Resume state from ${path}. Trust it, verify only the files/commands it names, then continue with its next step if ${o.who}'s prompt asks to continue:\n\n${txt}`
 }
 
 async function archive($: $, o: Opts, messages: readonly SessionMessage[]) {
-  const dir = (await progressPath($, o)).replace(/\.md$/, '')
+  const dir = await dirBase($, o)
   const stamp = new Date(await $.clock.now()).toISOString().replace(/[:.]/g, '-')
   const path = `${dir}.archive/${stamp}.md`
   const body = messages
@@ -162,9 +178,18 @@ async function reset($: $, o: Opts, force: boolean) {
   return 'Resetting to savepoint…'
 }
 
-function askSave($: $) {
+async function mirrorLatest($: $, path: string, latest: string) {
+  try {
+    const txt = await $.fs.read(path)
+    if (typeof txt === 'string' && txt.length >= MIN_SAVE_BYTES) await $.fs.write(latest, txt)
+  } catch {
+    // No save landed (a failed write, a shell line that only read it): nothing to copy.
+  }
+}
+
+async function askSave($: $, o: Opts) {
   return $.prompt.submit({
-    text: 'checkpoint: update the progress file now (task, key paths, what changed, exact next step). Do nothing else.',
+    text: `checkpoint: update ${await progressPath($, o)} now (task, key paths, what changed, exact next step). Do nothing else.`,
   })
 }
 
@@ -180,6 +205,8 @@ export const register: Register = (on, options) => {
     restoreOnClear: options.restoreOnClear !== false,
     who: String(options.userName ?? 'the user'),
   }
+  // The session a /clear just ended, until the next prompt restores its save.
+  let clearedFrom: string | undefined
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -230,7 +257,12 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     if (!WORK_TOOLS.has(String(e.tool))) return next(e)
     const path = await progressPath($, o)
-    const counts = !isProgressWrite(e as unknown as Record<string, unknown>, path, (await $.env.get('HOME')) ?? '')
+    const latest = await latestPath($, o)
+  const home = (await $.env.get('HOME')) ?? ''
+  const input = e as unknown as Record<string, unknown>
+  const isSave = isProgressWrite(input, path, home)
+  // A write to the shared copy is a save too (never work), though only this session's file counts for a reset.
+  const counts = !isSave && !isProgressWrite(input, latest, home)
     await update($, work, w => ({ ...w, inFlight: w.inFlight + 1 }))
     try {
       return await next(e)
@@ -241,6 +273,7 @@ export const register: Register = (on, options) => {
         lastWorkAt: counts ? now : w.lastWorkAt,
       }))
       if (counts) await update($, stepDone, () => false)
+      if (isSave) await mirrorLatest($, path, latest)
     }
   })
 
@@ -249,9 +282,10 @@ export const register: Register = (on, options) => {
     if (e.origin.kind !== 'composer') return next(e)
     const context = [...(e.context ?? [])]
 
-    if (o.restoreOnClear && (await $.store.get(CLEARED_KEY)) !== undefined) {
-      await $.store.delete(CLEARED_KEY)
-      const text = await restoreText($, o, '[savepoint restore after /clear]')
+    if (o.restoreOnClear && clearedFrom !== undefined) {
+      const from = clearedFrom
+      clearedFrom = undefined
+      const text = await restoreText($, o, '[savepoint restore after /clear]', from)
       if (text !== undefined) context.push(text)
     }
 
@@ -283,7 +317,9 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
-    if (e.reason === 'clear') await $.store.set(CLEARED_KEY, await $.clock.now())
+    // Held in this process, not $.store: the store is shared by every session, so another
+    // chat's next prompt would take the restore. A /clear keeps the process under a new id.
+    if (e.reason === 'clear') clearedFrom = e.sessionId
     return next(e)
   })
 
@@ -345,7 +381,7 @@ export const register: Register = (on, options) => {
           )}
           <Box key="btn" gap={1}>
             {v.ok && <Button key="reset" variant="primary" label="Rest at bonfire" onPress={() => reset($, o, false).then(t => $.ui.toast(t))} />}
-            {!v.ok && v.canSave && <Button key="save" label="Kindle a save" onPress={() => void askSave($)} />}
+            {!v.ok && v.canSave && <Button key="save" label="Kindle a save" onPress={() => void askSave($, o)} />}
             <Button key="later" label="Later" onPress={() => update($, isHidden, () => true)} />
           </Box>
         </Box>

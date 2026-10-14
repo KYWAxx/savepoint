@@ -10,7 +10,7 @@
     {
       "name": "savepoint",
       "description": "Context hygiene with safeguards: checkpoint each finished step, then reset the context to that save, never mid-project.",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "author": {
         "name": "KYWAxx"
       },

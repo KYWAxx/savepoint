@@ -4,7 +4,8 @@ import type { On } from 'claude-code'
 
 const toasts: string[] = []
 const NOW = 1_800_000_000_000
-const PROG = '/home/u/.claude/progress/-home-u-proj.md'
+const PROG = '/home/u/.claude/progress/-home-u-proj.abcd1234.md'
+const LATEST = '/home/u/.claude/progress/-home-u-proj.md'
 const SAVE = '# task\nnext step: render v3\n' + 'x'.repeat(300)
 
 // The world beneath the plugin: a 120k context, one project dir, a fake disk.
@@ -18,6 +19,7 @@ function world($: Engine, on: On, opts: { saveAgeMin?: number; hasSave?: boolean
   toasts.length = 0
 
   on('session.cwd', () => ({ value: '/home/u/proj' }))
+  on('session.id', () => ({ value: 'abcd1234-0000-4000-8000-000000000000' }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: 120_000, window: 200_000, percent: 60 }, rateLimits: [] } }))
   on('fs.stat', (_$, e) => {
     const f = files.get(e.path)
@@ -110,8 +112,8 @@ test('writing the checkpoint itself does not count as unsaved work', async ($, o
 
 test('a shell save spelled ~/ or $HOME/ also does not count as unsaved work', async ($, on) => {
   const w = world($, on)
-  await $.tool.call({ tool: 'Bash', command: "cat >> ~/.claude/progress/-home-u-proj.md <<'EOF'\nstep done\nEOF" } as never)
-  await $.tool.call({ tool: 'Bash', command: 'echo ok >> "$HOME/.claude/progress/-home-u-proj.md"' } as never)
+  await $.tool.call({ tool: 'Bash', command: "cat >> ~/.claude/progress/-home-u-proj.abcd1234.md <<'EOF'\nstep done\nEOF" } as never)
+  await $.tool.call({ tool: 'Bash', command: 'echo ok >> "$HOME/.claude/progress/-home-u-proj.abcd1234.md"' } as never)
   await finishStep($)
   expect(await reset($, w)).toContain('BONFIRE LIT')
 })
@@ -169,4 +171,27 @@ test('the band never shows over a running turn, even when the engine says idle',
     expect(await busy.find({ type: 'Text', text: /SAVEPOINT/ })).toBeUndefined()
     await busy.unmount()
   }
+})
+
+test('another chat in the same directory saving does not make this chat resettable', async ($, on) => {
+  const w = world($, on, { hasSave: false })
+  w.files.set(LATEST, { text: SAVE, mtimeMs: NOW })
+  w.files.set('/home/u/.claude/progress/-home-u-proj.ffff9999.md', { text: SAVE, mtimeMs: NOW })
+  await finishStep($)
+  expect(await reset($, w)).toContain('no checkpoint saved')
+  expect(w.compacted.core).toBe(0)
+})
+
+test('a save to this chat\'s file is copied to the shared latest file', async ($, on) => {
+  const w = world($, on, { hasSave: false })
+  w.files.set(PROG, { text: SAVE + 'mine', mtimeMs: NOW })
+  await $.tool.call({ tool: 'Write', file_path: PROG, content: SAVE + 'mine' } as never)
+  expect(w.files.get(LATEST)?.text).toContain('mine')
+})
+
+test('writing the shared latest file does not count as unsaved work', async ($, on) => {
+  const w = world($, on)
+  await finishStep($)
+  await $.tool.call({ tool: 'Write', file_path: LATEST, content: SAVE } as never)
+  expect(await reset($, w)).toContain('BONFIRE LIT')
 })

@@ -45,9 +45,13 @@ fraction of the context, and no summary model call is made.
 
 ### The progress file
 
-One file per working directory:
-`~/.claude/progress/<cwd with non-alphanumerics replaced by ->.md`.
-For example, `/home/me/proj` uses `~/.claude/progress/-home-me-proj.md`.
+One file per session, named after the working directory and the first 8 characters of the
+session id: `/home/me/proj` uses `~/.claude/progress/-home-me-proj.<session>.md`. Two chats in
+the same directory never overwrite, or reset to, each other's save.
+
+Every save is also copied to `~/.claude/progress/-home-me-proj.md`, the newest save from any
+session in that directory, so a fresh session can read where the directory left off. A reset
+only ever trusts the session's own file.
 
 Once the context passes 60k tokens, savepoint adds a short note to each of your prompts telling
 Claude how big the context is and when to update this file. Below that, it stays out of the way.
@@ -91,8 +95,8 @@ If anything goes wrong during the reset itself, it fails closed and leaves the c
 
 ### After `/clear`
 
-The first prompt after `/clear` gets the progress file's tail attached, so a manual clear
-resumes too. You can turn this off.
+The first prompt after `/clear` gets the tail of the cleared session's progress file attached,
+so a manual clear resumes too. You can turn this off.
 
 ## Settings
 
